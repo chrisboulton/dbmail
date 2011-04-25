@@ -54,7 +54,7 @@ GList * auth_get_known_users(void)
 	GList * users = NULL;
 	C c; R r; 
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT userid FROM %susers ORDER BY userid",DBPFX);
 		while (db_result_next(r)) 
@@ -73,7 +73,7 @@ GList * auth_get_known_aliases(void)
 	GList * aliases = NULL;
 	C c; R r;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c,"SELECT alias FROM %saliases ORDER BY alias",DBPFX);
 		while (db_result_next(r))
@@ -93,7 +93,7 @@ int auth_getclientid(u64_t user_idnr, u64_t * client_idnr)
 	*client_idnr = 0;
 	C c; R r; int t = TRUE;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT client_idnr FROM %susers WHERE user_idnr = %llu",DBPFX, user_idnr);
 		if (db_result_next(r))
@@ -114,7 +114,7 @@ int auth_getmaxmailsize(u64_t user_idnr, u64_t * maxmail_size)
 	*maxmail_size = 0;
 	C c; R r; int t = TRUE;
 	
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT maxmail_size FROM %susers WHERE user_idnr = %llu",DBPFX, user_idnr);
 		if (db_result_next(r))
@@ -136,7 +136,7 @@ char *auth_getencryption(u64_t user_idnr)
 	C c; R r;
 	
 	assert(user_idnr > 0);
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT encryption_type FROM %susers WHERE user_idnr = %llu",DBPFX, user_idnr);
 		if (db_result_next(r))
@@ -163,7 +163,7 @@ static GList *user_get_deliver_to(const char *username)
 		 "AND lower(alias) <> lower(deliver_to)",
 		 DBPFX);
 	
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		s = db_stmt_prepare(c, query);
 		db_stmt_set_str(s, 1, username);
@@ -263,7 +263,7 @@ int auth_change_password(u64_t user_idnr, const char *new_pass, const char *enct
 		return -1;
 	}
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c, "UPDATE %susers SET passwd = ?, encryption_type = ? WHERE user_idnr=?", DBPFX);
 		db_stmt_set_str(s, 1, new_pass);
@@ -332,7 +332,7 @@ int auth_validate(clientbase_t *ci, const char *username, const char *password, 
 	if (! auth_user_exists(real_username, user_idnr)) 
 		return FALSE;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT passwd, encryption_type FROM %susers WHERE user_idnr = %llu", DBPFX, *user_idnr);
 		if (db_result_next(r)) {
@@ -450,7 +450,7 @@ u64_t auth_md5_validate(clientbase_t *ci UNUSED, char *username,
 	if (! auth_user_exists(username, &user_idnr))
 		return DM_EQUERY;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT passwd FROM %susers WHERE user_idnr = %llu", DBPFX, user_idnr);
 		if (db_result_next(r)) { /* user found */
@@ -497,7 +497,7 @@ char *auth_get_userid(u64_t user_idnr)
 {
 	C c; R r;
 	char *result = NULL;
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 
 	TRY
 		r = db_query(c, "SELECT userid FROM %susers WHERE user_idnr = %llu", DBPFX, user_idnr);
@@ -516,7 +516,7 @@ int auth_check_userid(u64_t user_idnr)
 {
 	C c; R r; gboolean t = TRUE;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT userid FROM %susers WHERE user_idnr = %llu", DBPFX, user_idnr);
 		if (db_result_next(r))
@@ -541,7 +541,7 @@ int auth_addalias(u64_t user_idnr, const char *alias, u64_t clientid)
 		 "WHERE lower(alias) = lower(?) AND deliver_to = ? "
 		 "AND client_idnr = ?",DBPFX);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c,query);
 		db_stmt_set_str(s, 1, alias);
@@ -590,7 +590,7 @@ int auth_addalias_ext(const char *alias,
 	volatile int t = FALSE;
 	INIT_QUERY;
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		/* check if this alias already exists */
 		if (clientid != 0) {
@@ -654,7 +654,7 @@ int auth_removealias(u64_t user_idnr, const char *alias)
 {
 	C c; S s; gboolean t = FALSE;
 	
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c, "DELETE FROM %saliases WHERE deliver_to=? AND lower(alias) = lower(?)",DBPFX);
 		db_stmt_set_u64(s, 1, user_idnr);
@@ -673,7 +673,7 @@ int auth_removealias_ext(const char *alias, const char *deliver_to)
 {
 	C c; S s; gboolean t = FALSE;
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c, "DELETE FROM %saliases WHERE lower(deliver_to) = lower(?) AND lower(alias) = lower(?)", DBPFX);
 		db_stmt_set_str(s, 1, deliver_to);
@@ -693,7 +693,7 @@ GList * auth_get_user_aliases(u64_t user_idnr)
 	C c; R r;
 	GList *l = NULL;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT alias FROM %saliases WHERE deliver_to = '%llu' ORDER BY alias",DBPFX, user_idnr);
 		while (db_result_next(r))
@@ -712,7 +712,7 @@ GList * auth_get_aliases_ext(const char *alias)
 	C c; R r;
 	GList *l = NULL;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT deliver_to FROM %saliases WHERE alias = '%s' ORDER BY alias DESC",DBPFX, alias);
 		while (db_result_next(r))

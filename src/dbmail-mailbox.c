@@ -177,7 +177,7 @@ static int _mimeparts_dump(DbmailMailbox *self, GMimeStream *ostream)
 		"WHERE b.mailbox_idnr=%llu ORDER BY message_idnr",
 		DBPFX,DBPFX,DBPFX,self->id);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c,query);
 		while (db_result_next(r)) {
@@ -300,7 +300,7 @@ char * dbmail_mailbox_orderedsubject(DbmailMailbox *self)
 	tree = g_tree_new_full((GCompareDataFunc)dm_strcmpdata,NULL,(GDestroyNotify)g_free, NULL);
 
 	t = FALSE;
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		i=0;
 		r = db_query(c,query);
@@ -1067,7 +1067,7 @@ static gboolean _do_sort(GNode *node, DbmailMailbox *self)
         }
 
 	z = g_tree_new((GCompareFunc)ucmp);
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		i = 0;
 		r = db_query(c,q->str);
@@ -1115,7 +1115,7 @@ static GTree * mailbox_search(DbmailMailbox *self, search_key_t *s)
 	if (!s->search)
 		return NULL;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	t = g_string_new("");
 	q = g_string_new("");
 	TRY

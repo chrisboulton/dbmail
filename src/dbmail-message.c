@@ -115,28 +115,28 @@ static u64_t blob_exists(const char *buf, const char *hash)
 	volatile u64_t id_old = 0;
 	size_t l;
 	assert(buf);
-	C c; S s; R r;
+	C c_master; C c_slave; S s; R r;
 	char blob_cmp[DEF_FRAGSIZE];
 	memset(blob_cmp, 0, sizeof(blob_cmp));
 
 	l = strlen(buf);
-	c = db_con_get();
 	TRY
 		if (_db_params.db_driver == DM_DRIVER_ORACLE  && l > DM_ORA_MAX_BYTES_LOB_CMP) {
-			db_begin_transaction(c);
+			c_master = db_con_get(DB_MASTER);
+			db_begin_transaction(c_master);
 			/** XXX Due to specific Oracle behavior and limitation of
 			 * libzdb methods we can't perform direct comparision lob data
 			 * with some constant more then 4000 chars. So the only way to
 			 * avoid data duplication - insert record and check if it alread
 			 * exists in table. If it exists - rollback the transaction */
-			s = db_stmt_prepare(c, "INSERT INTO %smimeparts (hash, data, %ssize%s) VALUES (?, ?, ?)", 
+			s = db_stmt_prepare(c_master, "INSERT INTO %smimeparts (hash, data, %ssize%s) VALUES (?, ?, ?)",
 				DBPFX, db_get_sql(SQL_ESCAPE_COLUMN), db_get_sql(SQL_ESCAPE_COLUMN));
 			db_stmt_set_str(s, 1, hash);
 			db_stmt_set_blob(s, 2, buf, l);
 			db_stmt_set_int(s, 3, l);
 			db_stmt_exec(s);
-			id = db_get_pk(c, "mimeparts");
-			s = db_stmt_prepare(c, "SELECT a.id, b.id FROM dbmail_mimeparts a INNER JOIN " 
+			id = db_get_pk(c_master, "mimeparts");
+			s = db_stmt_prepare(c_master, "SELECT a.id, b.id FROM dbmail_mimeparts a INNER JOIN "
 					"%smimeparts b ON a.hash=b.hash AND DBMS_LOB.COMPARE(a.data, b.data) = 0 " 
 					" AND a.id<>b.id AND b.id=?", DBPFX);
 			db_stmt_set_u64(s,1,l);
@@ -146,13 +146,14 @@ static u64_t blob_exists(const char *buf, const char *hash)
 			if (id_old) {
 				//  BLOB already exists - rollback insert
 				id = id_old;
-				db_rollback_transaction(c);
+				db_rollback_transaction(c_master);
 			} else {
-				db_commit_transaction(c);
+				db_commit_transaction(c_master);
 			}
 		} else {
+			c_slave = db_con_get(DB_SLAVE);
 			snprintf(blob_cmp, DEF_FRAGSIZE, db_get_sql(SQL_COMPARE_BLOB), "data");
-			s = db_stmt_prepare(c,"SELECT id FROM %smimeparts WHERE hash=? AND %ssize%s=? AND %s", 
+			s = db_stmt_prepare(c_slave,"SELECT id FROM %smimeparts WHERE hash=? AND %ssize%s=? AND %s",
 					DBPFX,db_get_sql(SQL_ESCAPE_COLUMN), db_get_sql(SQL_ESCAPE_COLUMN),
 					blob_cmp);
 			db_stmt_set_str(s,1,hash);
@@ -165,9 +166,12 @@ static u64_t blob_exists(const char *buf, const char *hash)
 	CATCH(SQLException)
 		LOG_SQLERROR;
 		if (_db_params.db_driver == DM_DRIVER_ORACLE) 
-			db_rollback_transaction(c);
+			db_rollback_transaction(c_master);
 	FINALLY
-		db_con_close(c);
+		if (_db_params.db_driver == DM_DRIVER_ORACLE)
+			db_con_close(c_master);
+		else
+			db_con_close(c_slave);
 	END_TRY;
 
 	return id;
@@ -183,7 +187,7 @@ static u64_t blob_insert(const char *buf, const char *hash)
 	assert(buf);
 	l = strlen(buf);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		s = db_stmt_prepare(c, "INSERT INTO %smimeparts (hash, data, %ssize%s) VALUES (?, ?, ?) %s", 
@@ -215,7 +219,7 @@ static u64_t blob_insert(const char *buf, const char *hash)
 static int register_blob(DbmailMessage *m, u64_t id, gboolean is_header)
 {
 	C c; volatile gboolean t = FALSE;
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		t = db_exec(c, "INSERT INTO %spartlists (physmessage_id, is_header, part_key, part_depth, part_order, part_id) "
@@ -353,7 +357,7 @@ static DbmailMessage * _mime_retrieve(DbmailMessage *self)
 	n = g_string_new("");
 	g_string_printf(n,db_get_sql(SQL_ENCODE_ESCAPE), "data");
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT l.part_key,l.part_depth,l.part_order,l.is_header,%s,%s "
 			"FROM %smimeparts p "
@@ -995,7 +999,7 @@ static DbmailMessage * _retrieve(DbmailMessage *self, const char *query_template
 	date2char_str("p.internal_date", &frag);
 	snprintf(query, DEF_QUERYSIZE, query_template, frag, DBPFX, DBPFX, dbmail_message_get_physid(self));
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	if (! (r = db_query(c, query))) {
 		db_con_close(c);
 		return NULL;
@@ -1246,7 +1250,7 @@ int _message_insert(DbmailMessage *self,
 	/* insert a new physmessage entry */
 	
 	/* now insert an entry into the messages table */
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		insert_physmessage(self, c);
@@ -1325,7 +1329,7 @@ static int _header_name_get_id(const DbmailMessage *self, const char *header, u6
 	case_header = g_strdup_printf(db_get_sql(SQL_STRCASE),"headername");
 	tmp = g_new0(u64_t,1);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 
 	TRY
 		db_begin_transaction(c);
@@ -1446,7 +1450,7 @@ static int _header_value_get_id(const char *value, const char *sortfield, const 
 	hash = dm_get_hash_for_string(value);
 	if (! hash) return FALSE;
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		if ((tmp = _header_value_exists(c, value, (const char *)hash)) != 0)
@@ -1473,7 +1477,7 @@ static gboolean _header_insert(u64_t physmessage_id, u64_t headername_id, u64_t 
 
 	C c; S s; volatile gboolean t = TRUE;
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	db_con_clear(c);
 	TRY
 		db_begin_transaction(c);
@@ -1620,7 +1624,7 @@ static void insert_field_cache(u64_t physid, const char *field, const char *valu
 	/* field values are truncated to 255 bytes */
 	clean_value = g_strndup(value,CACHE_WIDTH);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		s = db_stmt_prepare(c,"INSERT INTO %s%sfield (physmessage_id, %sfield) VALUES (?,?)", DBPFX, field, field);
@@ -1687,7 +1691,7 @@ void dbmail_message_cache_envelope(const DbmailMessage *self)
 
 	envelope = imap_get_envelope(GMIME_MESSAGE(self->content));
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		s = db_stmt_prepare(c, "INSERT INTO %senvelope (physmessage_id, envelope) VALUES (?,?)", DBPFX);
@@ -1820,7 +1824,7 @@ static int get_mailbox_from_filters(DbmailMessage *message, u64_t useridnr, cons
 	if (! auth_user_exists(DBMAIL_ACL_ANYONE_USER, &anyone))
 		return t;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 
 	TRY
 		r = db_query(c, "SELECT f.mailbox,f.headername,f.headervalue FROM %sfilters f "

@@ -325,7 +325,7 @@ static int db_count_iplog(timestring_t lasttokeep, u64_t *rows)
 
 	char2date_str(lasttokeep, &to_date_str);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT COUNT(*) FROM %spbsp WHERE since < %s", DBPFX, to_date_str);
 		if (db_result_next(r))
@@ -356,7 +356,7 @@ static int db_count_replycache(timestring_t lasttokeep, u64_t *rows)
 
 	char2date_str(lasttokeep, &to_date_str);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT COUNT(*) FROM %sreplycache WHERE lastseen < %s", DBPFX, to_date_str);
 		if (db_result_next(r))
@@ -383,7 +383,7 @@ static int db_count_deleted(u64_t * rows)
 	C c; R r; volatile int t = TRUE;
 	assert(rows != NULL); *rows = 0;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT COUNT(*) FROM %smessages WHERE status = %d", DBPFX, MESSAGE_STATUS_DELETE);
 		if (db_result_next(r))
@@ -413,7 +413,7 @@ static int db_deleted_count(u64_t * rows)
 	C c; R r; volatile int t = FALSE;
 	assert(rows); *rows = 0;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT COUNT(*) FROM %smessages WHERE status=%d", DBPFX, MESSAGE_STATUS_PURGE);
 		if (db_result_next(r))
@@ -938,7 +938,7 @@ int do_migrate(int migrate_limit)
 	}
 	qprintf ("Preparing to migrate %d physmessages.\n", migrate_limit);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		r = db_query(c, "SELECT DISTINCT(physmessage_id) FROM %smessageblks LIMIT %d", DBPFX, migrate_limit);
 		qprintf ("Migrating %d physmessages...\n", migrate_limit);

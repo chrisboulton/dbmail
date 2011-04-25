@@ -92,7 +92,7 @@ static T MailboxState_getMessageState(T M)
 
 	msginfo = g_tree_new_full((GCompareDataFunc)ucmpdata, NULL,(GDestroyNotify)g_free,(GDestroyNotify)MessageInfo_free);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		db_begin_transaction(c); // we need read-committed isolation
 		r = db_query(c,query);
@@ -442,7 +442,7 @@ static int db_getmailbox_flags(T M)
 	C c; R r; volatile int t = DM_SUCCESS;
 	g_return_val_if_fail(M->id,DM_EQUERY);
 	
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT permission FROM %smailboxes WHERE mailbox_idnr = %llu",
 				DBPFX, M->id);
@@ -475,7 +475,7 @@ static int db_getmailbox_metadata(T M)
 		 "FROM %smailboxes WHERE mailbox_idnr = %llu",
 		 DBPFX, M->id);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, query);
 		if (db_result_next(r)) {
@@ -566,7 +566,7 @@ static int db_getmailbox_count(T M)
 
 	/* count messages */
  	t = FALSE;
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT 0,COUNT(*) FROM %smessages WHERE mailbox_idnr=%llu "
 				"AND (status < %d) UNION "
@@ -610,7 +610,9 @@ static int db_getmailbox_count(T M)
 		return t;
 	}
 
-	c = db_con_get();
+	// We leave this query against the master intentionally, to help prevent issues
+	// where the slave could be out of sync.
+	c = db_con_get(DB_MASTER);
 	t = FALSE;
 	TRY
 		r = db_query(c, "SELECT MAX(message_idnr)+1 FROM %smessages WHERE mailbox_idnr=%llu",DBPFX, M->id);
@@ -634,7 +636,7 @@ static int db_getmailbox_keywords(T M)
 	volatile int t = DM_SUCCESS;
 	const char *key;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT DISTINCT(keyword) FROM %skeywords k "
 				"LEFT JOIN %smessages m ON k.message_idnr=m.message_idnr "
@@ -662,7 +664,10 @@ static int db_getmailbox_seq(T M)
 	C c; R r; 
 	volatile int t = DM_SUCCESS;
 
-	c = db_con_get();
+	// This query doesn't look safe to send to the slave, because it's returning some sort of seq.
+	// no, presumably for the next message or just inserted message. Send it to the master to ensure
+	// consistency.
+	c = db_con_get(DB_MASTER);
 	TRY
 		r = db_query(c, "SELECT name,seq FROM %smailboxes WHERE mailbox_idnr=%llu", DBPFX, M->id);
 		if (db_result_next(r)) {
@@ -767,7 +772,7 @@ int db_acl_has_right(MailboxState_T M, u64_t userid, const char *right_flag)
 	}
 
 	result = FALSE;
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT * FROM %sacl WHERE user_id = %llu AND mailbox_id = %llu AND %s = 1", DBPFX, userid, mboxid, right_flag);
 		if (db_result_next(r))
@@ -795,7 +800,7 @@ int db_acl_get_acl_map(MailboxState_T M, u64_t userid, struct ACLMap *map)
 	if (! (auth_user_exists(DBMAIL_ACL_ANYONE_USER, &anyone)))
 		return DM_EQUERY;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		s = db_stmt_prepare(c, "SELECT lookup_flag,read_flag,seen_flag,"
 			"write_flag,insert_flag,post_flag,"

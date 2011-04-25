@@ -659,7 +659,7 @@ static void _fetch_headers(ImapSession *self, body_fetch_t *bodyfetch, gboolean 
 			self->mailbox->id, range, 
 			not?"NOT":"", bodyfetch->hdrnames);
 
-	c = db_con_get();	
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, q->str);
 		while (db_result_next(r)) {
@@ -852,7 +852,7 @@ static void _fetch_envelopes(ImapSession *self)
 			"AND message_idnr %s",
 			DBPFX, DBPFX,  
 			self->mailbox->id, range);
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, q->str);
 		while (db_result_next(r)) {
@@ -1570,7 +1570,7 @@ static int db_update_recent(GList *slices)
 	if (! (slices = g_list_first(slices)))
 		return t;
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 		while (slices) {
@@ -1713,7 +1713,7 @@ int dbmail_imap_session_mailbox_expunge(ImapSession *self)
 	ids = g_tree_keys(MailboxState_getMsginfo(M));
 	ids = g_list_reverse(ids);
 
-	self->c = db_con_get();
+	self->c = db_con_get(DB_MASTER);
 	db_begin_transaction(self->c);
 	g_list_foreach(ids, (GFunc) _do_expunge, self);
 	db_commit_transaction(self->c);

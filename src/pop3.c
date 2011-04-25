@@ -102,7 +102,7 @@ static int db_createsession(u64_t user_idnr, ClientSession_t * session_ptr)
 		 "ORDER BY msg.message_idnr ASC",DBPFX,DBPFX,
 		 mailbox_idnr, MESSAGE_STATUS_DELETE);
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, query);
 

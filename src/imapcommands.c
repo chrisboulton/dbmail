@@ -558,7 +558,7 @@ void _ic_delete_enter(dm_thread_data *D)
 			}
 
 			/* update messages in this mailbox: mark as deleted (status MESSAGE_STATUS_PURGE) */
-			c = db_con_get();
+			c = db_con_get(DB_MASTER);
 			TRY
 				db_begin_transaction(c);
 				db_exec(c, "UPDATE %smessages SET status=%d WHERE mailbox_idnr = %llu", DBPFX, MESSAGE_STATUS_PURGE, mailbox_idnr);

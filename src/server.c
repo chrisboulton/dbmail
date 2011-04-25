@@ -170,7 +170,7 @@ static void dm_thread_dispatch(gpointer data, gpointer user_data)
 static int server_setup(serverConfig_t *conf)
 {
 	GError *err = NULL;
-	guint tpool_size = _db_params.max_db_connections;
+	guint tpool_size = _db_params.master_db.max_db_connections;
 
 	server_set_sighandler();
 

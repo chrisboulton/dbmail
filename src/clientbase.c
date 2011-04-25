@@ -435,7 +435,7 @@ void ci_authlog_init(clientbase_t *self, const char *service, const char *userna
 	const char *now = db_get_sql(SQL_CURRENT_TIMESTAMP);
 	char *frag = db_returning("id");
 	const char *user = self->auth?Cram_getUsername(self->auth):username;
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 
 		s = db_stmt_prepare(c, "INSERT INTO %sauthlog (userid, service, login_time, logout_time, src_ip, src_port, dst_ip, dst_port, status)"
@@ -467,7 +467,7 @@ static void ci_authlog_close(clientbase_t *self)
 	if ((! server_conf->authlog) || server_conf->no_daemonize) return;
 	if (! self->authlog_id) return;
 	const char *now = db_get_sql(SQL_CURRENT_TIMESTAMP);
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c, "UPDATE %sauthlog SET logout_time=%s, status=?, bytes_rx=?, bytes_tx=? "
 		"WHERE id=?", DBPFX, now);

@@ -48,6 +48,13 @@
 #define C Connection_T
 #define U URL_T
 
+typedef enum {
+	DB_MASTER = 0,
+	DB_SLAVE = 1
+} db_conn_types;
+
+gboolean db_connect_pool(db_connection_param_t params, P * pool, int * connection_status, U * url);
+
 /**
  * \brief connect to the database
  * \return 
@@ -62,7 +69,7 @@ int db_connect(void);
 int db_check_version(void);
 
 /* get a connection from the pool */
-C db_con_get(void);
+C db_con_get(int type);
 
 gboolean dm_db_ping(void);
 void db_con_close(C c);

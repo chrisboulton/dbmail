@@ -33,7 +33,7 @@ int dm_sievescript_getbyname(u64_t user_idnr, char *scriptname, char **script)
 	C c; R r; S s; volatile int t = FALSE;
 	assert(scriptname);
 				
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		s = db_stmt_prepare(c, "SELECT script FROM %ssievescripts WHERE owner_idnr = ? AND name = ?", DBPFX);
 		db_stmt_set_u64(s, 1, user_idnr);
@@ -61,7 +61,7 @@ int dm_sievescript_isactive_byname(u64_t user_idnr, const char *scriptname)
 {
 	C c; R r; S s; volatile int t = TRUE;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		if (scriptname) {
 			s = db_stmt_prepare(c, "SELECT name FROM %ssievescripts WHERE owner_idnr = ? AND active = 1 AND name = ?", DBPFX);
@@ -91,7 +91,7 @@ int dm_sievescript_get(u64_t user_idnr, char **scriptname)
 	assert(scriptname);
 	*scriptname = NULL;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c, "SELECT name from %ssievescripts where owner_idnr = %llu and active = 1", DBPFX, user_idnr);
 		if (db_result_next(r))
@@ -111,7 +111,7 @@ int dm_sievescript_list(u64_t user_idnr, GList **scriptlist)
 {
 	C c; R r; volatile int t = FALSE;
 
-	c = db_con_get();
+	c = db_con_get(DB_SLAVE);
 	TRY
 		r = db_query(c,"SELECT name,active FROM %ssievescripts WHERE owner_idnr = %llu", DBPFX,user_idnr);
 		while (db_result_next(r)) {
@@ -140,7 +140,7 @@ int dm_sievescript_rename(u64_t user_idnr, char *scriptname, char *newname)
 	 * According to the draft RFC, a script with the same
 	 * name as an existing script should *atomically* replace it.
 	 */
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 
@@ -187,7 +187,7 @@ int dm_sievescript_add(u64_t user_idnr, char *scriptname, char *script)
 	C c; R r; S s; volatile int t = FALSE;
 	assert(scriptname);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 
@@ -233,7 +233,7 @@ int dm_sievescript_deactivate(u64_t user_idnr, char *scriptname)
 	C c; S s; volatile gboolean t = FALSE;
 	assert(scriptname);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c, "UPDATE %ssievescripts set active = 0 where owner_idnr = ? and name = ?", DBPFX);
 		db_stmt_set_u64(s, 1, user_idnr);
@@ -253,7 +253,7 @@ int dm_sievescript_activate(u64_t user_idnr, char *scriptname)
 	C c; S s; volatile gboolean t = FALSE;
 	assert(scriptname);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		db_begin_transaction(c);
 
@@ -285,7 +285,7 @@ int dm_sievescript_delete(u64_t user_idnr, char *scriptname)
 	C c; S s; volatile gboolean t = FALSE;
 	assert(scriptname);
 
-	c = db_con_get();
+	c = db_con_get(DB_MASTER);
 	TRY
 		s = db_stmt_prepare(c,"DELETE FROM %ssievescripts WHERE owner_idnr = ? AND name = ?", DBPFX);
 		db_stmt_set_u64(s, 1, user_idnr);

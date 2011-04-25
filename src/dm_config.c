@@ -240,8 +240,9 @@ void SetTraceLevel(const char *service_name)
 
 void GetDBParams(void)
 {
-	field_t port_string, sock_string, serverid_string, query_time;
-	field_t max_db_connections;
+	field_t master_port_string, master_sock_string, master_max_db_connections;
+	field_t slave_port_string, slave_sock_string, slave_max_db_connections;
+	field_t serverid_string, query_time;
 
 	if (config_get_value("driver", "DBMAIL", _db_params.driver) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [driver]");
@@ -261,17 +262,17 @@ void GetDBParams(void)
 		TRACE(TRACE_EMERG, "error getting config! [authdriver]");
 	if (config_get_value("sortdriver", "DBMAIL", _db_params.sortdriver) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [sortdriver]");
-	if (config_get_value("host", "DBMAIL", _db_params.host) < 0)
+	if (config_get_value("host", "DBMAIL", _db_params.master_db.host) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [host]");
-	if (config_get_value("db", "DBMAIL", _db_params.db) < 0) 
+	if (config_get_value("db", "DBMAIL", _db_params.master_db.db) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [db]");
-	if (config_get_value("user", "DBMAIL", _db_params.user) < 0) 
+	if (config_get_value("user", "DBMAIL", _db_params.master_db.user) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [user]");
-	if (config_get_value("pass", "DBMAIL", _db_params.pass) < 0)
+	if (config_get_value("pass", "DBMAIL", _db_params.master_db.pass) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [pass]");
-	if (config_get_value("sqlport", "DBMAIL", port_string) < 0)
+	if (config_get_value("sqlport", "DBMAIL", master_port_string) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [sqlpost]");
-	if (config_get_value("sqlsocket", "DBMAIL", sock_string) < 0)
+	if (config_get_value("sqlsocket", "DBMAIL", master_sock_string) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [sqlsocket]");
 	if (config_get_value("serverid", "DBMAIL", serverid_string) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [serverid]");
@@ -279,8 +280,27 @@ void GetDBParams(void)
 		TRACE(TRACE_EMERG, "error getting config! [encoding]");
 	if (config_get_value("table_prefix", "DBMAIL", _db_params.pfx) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [table_prefix]");
-	if (config_get_value("max_db_connections", "DBMAIL", max_db_connections) < 0)
+	if (config_get_value("max_db_connections", "DBMAIL", master_max_db_connections) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [max_db_connections]");
+
+	if (config_get_value("slave_host", "DBMAIL", _db_params.slave_db.host) < 0) {
+		TRACE(TRACE_EMERG, "error getting config! [slave_host]");
+	}
+
+	if (strlen((const char *)_db_params.slave_db.host)) {
+		if (config_get_value("slave_db", "DBMAIL", _db_params.slave_db.db) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_db]");
+		if (config_get_value("slave_user", "DBMAIL", _db_params.slave_db.user) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_db]");
+		if (config_get_value("slave_pass", "DBMAIL", _db_params.slave_db.pass) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_pass]");
+		if (config_get_value("slave_sqlport", "DBMAIL", slave_port_string) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_sqlport]");
+		if (config_get_value("slave_sqlsocket", "DBMAIL", slave_sock_string) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_sqlsocket]");
+		if (config_get_value("slave_max_db_connections", "DBMAIL", slave_max_db_connections) < 0)
+			TRACE(TRACE_EMERG, "error getting config! [slave_max_db_connections]");
+	}
 
 	if (config_get_value("query_time_info", "DBMAIL", query_time) < 0)
 		TRACE(TRACE_EMERG, "error getting config! [query_time_info]");
@@ -321,30 +341,52 @@ void GetDBParams(void)
 	}
 
 	/* expand ~ in db name to HOME env variable */
-	if ((strlen(_db_params.db) > 0 ) && (_db_params.db[0] == '~')) {
+	if ((strlen(_db_params.master_db.db) > 0 ) && (_db_params.master_db.db[0] == '~')) {
 		char *homedir;
 		field_t db;
 		if ((homedir = getenv ("HOME")) == NULL)
 			TRACE(TRACE_EMERG, "can't expand ~ in db name");
-		g_snprintf(db, FIELDSIZE, "%s%s", homedir, &(_db_params.db[1]));
-		g_strlcpy(_db_params.db, db, FIELDSIZE);
+		g_snprintf(db, FIELDSIZE, "%s%s", homedir, &(_db_params.master_db.db[1]));
+		g_strlcpy(_db_params.master_db.db, db, FIELDSIZE);
+	}
+
+	if ((strlen(_db_params.slave_db.db) > 0 ) && (_db_params.slave_db.db[0] == '~')) {
+		char *homedir;
+		field_t db;
+		if ((homedir = getenv ("HOME")) == NULL)
+			TRACE(TRACE_EMERG, "can't expand ~ in db name");
+		g_snprintf(db, FIELDSIZE, "%s%s", homedir, &(_db_params.slave_db.db[1]));
+		g_strlcpy(_db_params.slave_db.db, db, FIELDSIZE);
 	}
 
 	/* check if port_string holds a value */
-	if (strlen(port_string) != 0) {
+	if (strlen(master_port_string) != 0) {
 		errno = 0;
-		_db_params.port =
-		    (unsigned int) strtoul(port_string, NULL, 10);
+		_db_params.master_db.port =
+		    (unsigned int) strtoul(master_port_string, NULL, 10);
 		if (errno == EINVAL || errno == ERANGE)
 			TRACE(TRACE_EMERG, "wrong value for sqlport in config file [%s]", strerror(errno));
 	} else
-		_db_params.port = 0;
+		_db_params.master_db.port = 0;
+
+	if (strlen(slave_port_string) != 0) {
+		errno = 0;
+		_db_params.slave_db.port = (unsigned int) strtoul(slave_port_string, NULL, 10);
+		if (errno == EINVAL || errno == ERANGE)
+			TRACE(TRACE_EMERG, "wrong value for slave_sqlport in config file [%s]", strerror(errno));
+	} else
+		_db_params.slave_db.port = 0;
 
 	/* same for sock_string */
-	if (strlen(sock_string) != 0)
-		g_strlcpy(_db_params.sock, sock_string, FIELDSIZE);
+	if (strlen(master_sock_string) != 0)
+		g_strlcpy(_db_params.master_db.sock, master_sock_string, FIELDSIZE);
 	else
-		_db_params.sock[0] = '\0';
+		_db_params.master_db.sock[0] = '\0';
+
+	if (strlen(slave_sock_string) != 0)
+		g_strlcpy(_db_params.slave_db.sock, slave_sock_string, FIELDSIZE);
+	else
+		_db_params.slave_db.sock[0] = '\0';
 
 	/* serverid */
 	if (strlen(serverid_string) != 0) {
@@ -355,12 +397,21 @@ void GetDBParams(void)
 		_db_params.serverid = 1;
 	}
 	/* max_db_connections */
-	if (strlen(max_db_connections) != 0) {
-		_db_params.max_db_connections = (unsigned int) strtol(max_db_connections, NULL, 10);
+	if (strlen(master_max_db_connections) != 0) {
+		_db_params.master_db.max_db_connections = (unsigned int) strtol(master_max_db_connections, NULL, 10);
 		if (errno == EINVAL || errno == ERANGE)
 			TRACE(TRACE_EMERG, "max_db_connnections invalid in config file");
 	} else {
-		_db_params.max_db_connections = 10;
+		_db_params.master_db.max_db_connections = 10;
+	}
+
+	/* max_db_connections */
+	if (strlen(slave_max_db_connections) != 0) {
+		_db_params.slave_db.max_db_connections = (unsigned int) strtol(slave_max_db_connections, NULL, 10);
+		if (errno == EINVAL || errno == ERANGE)
+			TRACE(TRACE_EMERG, "slave_max_db_connnections invalid in config file");
+	} else {
+		_db_params.slave_db.max_db_connections = _db_params.master_db.max_db_connections;
 	}
 
 }
